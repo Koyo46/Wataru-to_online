@@ -48,14 +48,6 @@ export default function Home() {
       
       if (!allSameRow && !allSameCol) return; // 一直線でない場合は無視
     }
-
-    // 4マスや5マス目を置こうとしたとき、ブロックが残っていないなら無視する
-    if (currentPath.length === 2) { // 3つ目（=合計3マス）→4マスブロック
-      if (playerBlocks[currentPlayer].size4 === 0) return; // 残っていないなら無視
-    }
-    if (currentPath.length === 3) { // 4つ目（=合計4マス）→5マスブロック
-      if (playerBlocks[currentPlayer].size5 === 0) return; // 残っていないなら無視
-    }
     
     //6マス目は無視
     if (currentPath.length === 5) return;
@@ -67,14 +59,48 @@ export default function Home() {
     newBoard[row][col] = currentPlayer;
     setBoard(newBoard);
  
-    // ブロックを1つ減らす（4マス目を置くときだけsize4を減らし、5マス目を置くときだけsize5を減らす）
-    if (currentPath.length === 3) {
-      // 4マス目を置いた（currentPath.length === 3 → 新しく4マス目）
-      setPlayerBlocks(prev => ({ ...prev, [currentPlayer]: { ...prev[currentPlayer], size4: prev[currentPlayer].size4 - 1 } }));
-    } else if (currentPath.length === 4) {
-      // 5マス目を置いた（currentPath.length === 4 → 新しく5マス目）
-      setPlayerBlocks(prev => ({ ...prev, [currentPlayer]: { ...prev[currentPlayer], size5: prev[currentPlayer].size5 - 1 } }));
+    
+  };
+
+  const handleConfirm = () => {
+    if (currentPath.length < 3) return; // 3マス未満は確定できない
+    // 4マス・5マスの場合、それぞれのブロック在庫が0なら確定不可
+    if (currentPath.length === 4 && playerBlocks[currentPlayer].size4 === 0) return alert("4マスブロックはもうありません");
+    if (currentPath.length === 5 && playerBlocks[currentPlayer].size5 === 0) return alert("5マスブロックはもうありません");
+    // ブロックを減らす
+    if (currentPath.length === 4) {
+      // 4マスブロックを使用
+      setPlayerBlocks(prev => ({ 
+        ...prev, 
+        [currentPlayer]: { 
+          ...prev[currentPlayer], 
+          size4: prev[currentPlayer].size4 - 1 
+        } 
+      }));
+    } else if (currentPath.length === 5) {
+      // 5マスブロックを使用
+      setPlayerBlocks(prev => ({ 
+        ...prev, 
+        [currentPlayer]: { 
+          ...prev[currentPlayer], 
+          size5: prev[currentPlayer].size5 - 1 
+        } 
+      }));
     }
+    
+    // currentPathをクリアしてターンを移動
+    setCurrentPath([]);
+    setCurrentPlayer((-currentPlayer) as 1 | -1);
+  };
+
+  const handleCancel = () => {
+    // currentPathに置いたマスをボードから削除
+    const newBoard = [...board.map(row => [...row])];
+    currentPath.forEach(({ row, col }) => {
+      newBoard[row][col] = 0;
+    });
+    setBoard(newBoard);
+    setCurrentPath([]);
   };
 
   const handleReset = () => {
@@ -147,14 +173,14 @@ export default function Home() {
             <div className="flex gap-4 mt-2">
               {currentPath.length > 2 && (
                 <button
+                  onClick={handleConfirm}
                   className="px-4 py-1 bg-cyan-600 text-white font-bold rounded hover:bg-cyan-700 transition"
-                  // onClick={handleConfirmPath} // 実装されていれば
                 >
                   確定
                 </button>
               )}
               <button
-                // onClick={handleCancelPath} // 実装されていれば
+                onClick={handleCancel}
                 className="px-4 py-1 bg-gray-500 text-white font-bold rounded hover:bg-gray-600 transition"
               >
                 キャンセル
