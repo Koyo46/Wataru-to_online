@@ -48,7 +48,17 @@ export default function Home() {
       
       if (!allSameRow && !allSameCol) return; // 一直線でない場合は無視
     }
+
+    // 4マスや5マス目を置こうとしたとき、ブロックが残っていないなら無視する
+    if (currentPath.length === 2) { // 3つ目（=合計3マス）→4マスブロック
+      if (playerBlocks[currentPlayer].size4 === 0) return; // 残っていないなら無視
+    }
+    if (currentPath.length === 3) { // 4つ目（=合計4マス）→5マスブロック
+      if (playerBlocks[currentPlayer].size5 === 0) return; // 残っていないなら無視
+    }
     
+    //6マス目は無視
+    if (currentPath.length === 5) return;
     // 新しいマスを追加
     const newPath = [...currentPath, { row, col }];
     setCurrentPath(newPath);
@@ -56,6 +66,15 @@ export default function Home() {
     const newBoard = [...board.map(row => [...row])];
     newBoard[row][col] = currentPlayer;
     setBoard(newBoard);
+ 
+    // ブロックを1つ減らす（4マス目を置くときだけsize4を減らし、5マス目を置くときだけsize5を減らす）
+    if (currentPath.length === 3) {
+      // 4マス目を置いた（currentPath.length === 3 → 新しく4マス目）
+      setPlayerBlocks(prev => ({ ...prev, [currentPlayer]: { ...prev[currentPlayer], size4: prev[currentPlayer].size4 - 1 } }));
+    } else if (currentPath.length === 4) {
+      // 5マス目を置いた（currentPath.length === 4 → 新しく5マス目）
+      setPlayerBlocks(prev => ({ ...prev, [currentPlayer]: { ...prev[currentPlayer], size5: prev[currentPlayer].size5 - 1 } }));
+    }
   };
 
   const handleReset = () => {
@@ -92,6 +111,8 @@ export default function Home() {
             <div className="flex gap-0.5">
               <div className={`w-5 h-5 border ${playerBlocks[1].size4 > 0 ? 'bg-cyan-400 border-cyan-600' : 'bg-gray-500 border-gray-600'}`}></div>
               <div className={`w-5 h-5 border ${playerBlocks[1].size4 > 0 ? 'bg-cyan-400 border-cyan-600' : 'bg-gray-500 border-gray-600'}`}></div>
+              <div className={`w-5 h-5 border ${playerBlocks[1].size4 > 0 ? 'bg-cyan-400 border-cyan-600' : 'bg-gray-500 border-gray-600'}`}></div>
+              <div className={`w-5 h-5 border ${playerBlocks[1].size4 > 0 ? 'bg-cyan-400 border-cyan-600' : 'bg-gray-500 border-gray-600'}`}></div>
             </div>
             <span className="text-lg font-bold text-black">残{playerBlocks[1].size4}</span>
           </div>
@@ -99,6 +120,7 @@ export default function Home() {
           {/* 5マスブロック */}
           <div className={`flex items-center gap-3 ${playerBlocks[1].size5 === 0 ? 'opacity-30' : ''}`}>
             <div className="flex gap-0.5">
+              <div className={`w-5 h-5 border ${playerBlocks[1].size5 > 0 ? 'bg-cyan-400 border-cyan-600' : 'bg-gray-500 border-gray-600'}`}></div>
               <div className={`w-5 h-5 border ${playerBlocks[1].size5 > 0 ? 'bg-cyan-400 border-cyan-600' : 'bg-gray-500 border-gray-600'}`}></div>
               <div className={`w-5 h-5 border ${playerBlocks[1].size5 > 0 ? 'bg-cyan-400 border-cyan-600' : 'bg-gray-500 border-gray-600'}`}></div>
               <div className={`w-5 h-5 border ${playerBlocks[1].size5 > 0 ? 'bg-cyan-400 border-cyan-600' : 'bg-gray-500 border-gray-600'}`}></div>
