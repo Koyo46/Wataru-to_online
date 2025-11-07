@@ -6,8 +6,13 @@ import { useState } from "react";
 export default function Home() {
 
   const [currentPlayer, setCurrentPlayer] = useState<1 | -1>(1);
-  const [board, setBoard] = useState<number[][]>(Array.from({ length: 18 }, () => Array(18).fill(0)));
-  const [currentPath, setCurrentPath] = useState<{ row: number, col: number }[]>([]); // 現在置いてる途中の座標
+  // board[row][col] = [layer1, layer2] (0: 空, 1: 水色, -1: ピンク)
+  const [board, setBoard] = useState<number[][][]>(
+    Array.from({ length: 18 }, () => 
+      Array.from({ length: 18 }, () => [0, 0])
+    )
+  );
+  const [currentPath, setCurrentPath] = useState<{ row: number, col: number, layer: number }[]>([]); // 現在置いてる途中の座標
 
   // プレイヤーによって管理するブロック残数
   const [playerBlocks, setPlayerBlocks] = useState({
@@ -16,31 +21,76 @@ export default function Home() {
   });
 
   const handleCellClick = (row: number, col: number) => {
-    if (board[row][col] !== 0) return; // 既に置かれてたら無視
-  
-    // もし何も置いてない状態なら、起点として置く
+    const layers = board[row][col];
+    const layer1 = layers[0];
+    const layer2 = layers[1];
+    
+    // レイヤー2が既に埋まっている場合は置けない
+    if (layer2 !== 0) return;
+    
+    // 起点の場合
     if (currentPath.length === 0) {
-      setCurrentPath([{ row, col }]);
-      const newBoard = [...board.map(row => [...row])];
-      newBoard[row][col] = currentPlayer;
+      let targetLayer = -1;
+      
+      // レイヤー1が空なら、レイヤー1に置く
+      if (layer1 === 0) {
+        targetLayer = 0;
+      } 
+      // レイヤー1に自分の色があり、レイヤー2が空なら、レイヤー2に置ける（橋の起点）
+      else if (layer1 === currentPlayer) {
+        targetLayer = 1;
+      }
+      // それ以外は置けない
+      else {
+        return;
+      }
+      
+      setCurrentPath([{ row, col, layer: targetLayer }]);
+      const newBoard = board.map(r => r.map(c => [...c]));
+      newBoard[row][col][targetLayer] = currentPlayer;
       setBoard(newBoard);
       return;
     }
-  
+    
+    // 2マス目以降の処理
+    const firstLayer = currentPath[0].layer;
+    let targetLayer = -1;
+    
+    if (firstLayer === 0) {
+      // レイヤー1モード：レイヤー1が空でなければならない
+      if (layer1 === 0) {
+        targetLayer = 0;
+      } else {
+        return; // レイヤー1に何かある場合は置けない
+      }
+    } else {
+      // レイヤー2モード（橋渡し）
+      if (layer1 === currentPlayer) {
+        // レイヤー1に自分の色がある場合：レイヤー2に置く（既存マス）
+        targetLayer = 1;
+      } else if (layer1 === 0) {
+        // レイヤー1が空の場合：レイヤー2に置く（新規マス）
+        targetLayer = 1;
+      } else {
+        // レイヤー1に相手の色がある場合は置けない
+        return;
+      }
+    }
+    
     // すでに置いている場合、currentPath内のいずれかのマスの隣でなければ無視
     const isAdjacentToPath = currentPath.some(p => 
       (Math.abs(p.row - row) === 1 && p.col === col) ||
       (Math.abs(p.col - col) === 1 && p.row === row)
     );
-  
+    
     if (!isAdjacentToPath) return;
-  
+    
     // すでにcurrentPathに含まれていたら無視（重複防止）
     if (currentPath.some(p => p.row === row && p.col === col)) return;
-  
+    
     // 一直線チェック：2マス目以降は方向を決定し、その方向に沿っているか確認
     if (currentPath.length >= 1) {
-      const newPath = [...currentPath, { row, col }];
+      const newPath = [...currentPath, { row, col, layer: targetLayer }];
       
       // すべてのマスが同じ行または同じ列にあるかチェック
       const allSameRow = newPath.every(p => p.row === newPath[0].row);
@@ -51,19 +101,121 @@ export default function Home() {
     
     //6マス目は無視
     if (currentPath.length === 5) return;
+    
     // 新しいマスを追加
-    const newPath = [...currentPath, { row, col }];
+    const newPath = [...currentPath, { row, col, layer: targetLayer }];
     setCurrentPath(newPath);
 
-    const newBoard = [...board.map(row => [...row])];
-    newBoard[row][col] = currentPlayer;
+    const newBoard = board.map(r => r.map(c => [...c]));
+    newBoard[row][col][targetLayer] = currentPlayer;
     setBoard(newBoard);
- 
-    
   };
+
+ 
+
+  const handleCancel = () => {
+    // currentPathに置いたマスをボードから削除
+    const newBoard = board.map(r => r.map(c => [...c]));
+    currentPath.forEach(({ row, col, layer }) => {
+      newBoard[row][col][layer] = 0;
+    });
+    setBoard(newBoard);
+    setCurrentPath([]);
+  };
+
+  const handleReset = () => {
+    setBoard(Array.from({ length: 18 }, () => 
+      Array.from({ length: 18 }, () => [0, 0])
+    ));
+    setCurrentPlayer(1);
+    setCurrentPath([]);
+    setPlayerBlocks({ 1: { size4: 1, size5: 1 }, [-1]: { size4: 1, size5: 1 } });
+  };
+
+  function checkBridge(board: number[][][], player: 1 | -1) {
+    const n = board.length; // 盤面のサイズ（例: 18）
+    const visited = Array.from({ length: n }, () => Array(n).fill(false));
+    const stack: { row: number; col: number }[] = [];
+    
+    // マスにプレイヤーの色があるかチェック（レイヤー1またはレイヤー2）
+    const hasPlayerColor = (row: number, col: number) => {
+      return board[row][col][0] === player || board[row][col][1] === player;
+    };
+  
+    // 🌱 スタート地点を探す
+    if (player === 1) {
+      // 水色は上の端
+      for (let col = 0; col < n; col++) {
+        if (hasPlayerColor(0, col)) {
+          stack.push({ row: 0, col }); // スタート候補として追加
+          visited[0][col] = true; // 一度見た場所として記録
+        }
+      }
+    } else {
+      // ピンクは左の端
+      for (let row = 0; row < n; row++) {
+        if (hasPlayerColor(row, 0)) {
+          stack.push({ row, col: 0 });
+          visited[row][0] = true;
+        }
+      }
+    }
+  
+    // 🔁 隣（上下左右）に同じ色があるかを探索する
+    const directions = [
+      { dr: 1, dc: 0 }, // 下
+      { dr: -1, dc: 0 }, // 上
+      { dr: 0, dc: 1 }, // 右
+      { dr: 0, dc: -1 }, // 左
+    ];
+  
+    // 🚶 探索開始！
+    while (stack.length > 0) {
+      const current = stack.pop();
+      if (!current) continue;
+      const { row, col } = current;
+  
+      // 🎯 もし反対側まで届いたら勝ち！
+      if (player === 1 && row === n - 1) return true; // 水色：下まで
+      if (player === -1 && col === n - 1) return true; // ピンク：右まで
+  
+      // 🔍 周り4方向を確認する
+      for (const { dr, dc } of directions) {
+        const nr: number = row + dr;
+        const nc: number = col + dc;
+        if (
+          nr >= 0 && nr < n && nc >= 0 && nc < n && // 盤面外チェック
+          !visited[nr][nc] && // まだ見ていない
+          hasPlayerColor(nr, nc) // 自分の色
+        ) {
+          visited[nr][nc] = true; // 見た記録を残す
+          stack.push({ row: nr, col: nc }); // 次の探索候補として追加
+        }
+      }
+    }
+  
+    // 🚫 最後まで見ても反対側に届かなかった
+    return false;
+  }
 
   const handleConfirm = () => {
     if (currentPath.length < 3) return; // 3マス未満は確定できない
+    
+    // レイヤー2モード（橋渡し）の場合、始点と終点が両方とも既存マスでなければならない
+    const firstCell = currentPath[0];
+    const lastCell = currentPath[currentPath.length - 1];
+    
+    if (firstCell.layer === 1) {
+      // 始点がレイヤー2の場合
+      const firstCellLayers = board[firstCell.row][firstCell.col];
+      const lastCellLayers = board[lastCell.row][lastCell.col];
+      
+      // 終点もレイヤー2で、かつレイヤー1に自分の色がなければならない
+      if (lastCell.layer !== 1 || lastCellLayers[0] !== currentPlayer) {
+        return alert("橋渡しの終点は既存のマスでなければなりません");
+      }
+    }
+    
     // 4マス・5マスの場合、それぞれのブロック在庫が0なら確定不可
     if (currentPath.length === 4 && playerBlocks[currentPlayer].size4 === 0) return alert("4マスブロックはもうありません");
     if (currentPath.length === 5 && playerBlocks[currentPlayer].size5 === 0) return alert("5マスブロックはもうありません");
@@ -87,27 +239,12 @@ export default function Home() {
         } 
       }));
     }
-    
+    if (checkBridge(board, currentPlayer)) {
+      alert("あなたの勝ちです！");
+    }
     // currentPathをクリアしてターンを移動
     setCurrentPath([]);
     setCurrentPlayer((-currentPlayer) as 1 | -1);
-  };
-
-  const handleCancel = () => {
-    // currentPathに置いたマスをボードから削除
-    const newBoard = [...board.map(row => [...row])];
-    currentPath.forEach(({ row, col }) => {
-      newBoard[row][col] = 0;
-    });
-    setBoard(newBoard);
-    setCurrentPath([]);
-  };
-
-  const handleReset = () => {
-    setBoard(Array.from({ length: 18 }, () => Array(18).fill(0)));
-    setCurrentPlayer(1);
-    setCurrentPath([]);
-    setPlayerBlocks({ 1: { size4: 1, size5: 1 }, [-1]: { size4: 1, size5: 1 } });
   };
 
   return (
@@ -195,13 +332,18 @@ export default function Home() {
           {Array.from({ length: 18 * 18 }).map((_, index) => {
             const row = Math.floor(index / 18);
             const col = index % 18;
-            const cellValue = board[row][col];
+            const layers = board[row][col];
+            const layer1 = layers[0];
+            const layer2 = layers[1];
             
+            // レイヤー2が優先表示（上に重なっている）
             let bgColor = "bg-black";
-            if (cellValue === 1) {
-              bgColor = "bg-cyan-400";
-            } else if (cellValue === -1) {
-              bgColor = "bg-pink-400";
+            if (layer2 !== 0) {
+              // レイヤー2がある場合は明るい色で表示
+              bgColor = layer2 === 1 ? "bg-cyan-200" : "bg-pink-200";
+            } else if (layer1 !== 0) {
+              // レイヤー1のみの場合は通常の色
+              bgColor = layer1 === 1 ? "bg-cyan-400" : "bg-pink-400";
             }
             
             return (
