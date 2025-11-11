@@ -1,9 +1,12 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
+import { WataruToGame } from "../utils/gameLogic";
 
 export default function Home() {
+  // ゲームロジック管理用のインスタンス
+  const gameRef = useRef<WataruToGame>(new WataruToGame());
 
   const [currentPlayer, setCurrentPlayer] = useState<1 | -1>(1);
   // board[row][col] = [layer1, layer2] (0: 空, 1: 水色, -1: ピンク)
@@ -19,6 +22,15 @@ export default function Home() {
     1: { size4: 1, size5: 1 },   // 水色プレイヤー
     [-1]: { size4: 1, size5: 1 }, // ピンクプレイヤー
   });
+
+  // Alpha Zero用のデータ取得関数（デバッグ・将来の統合用）
+  const exportGameStateForAI = () => {
+    return {
+      tensorBoard: gameRef.current.getBoardAsTensor(),
+      gameState: gameRef.current.getStateForAI(),
+      gameRecord: gameRef.current.exportGameRecord(),
+    };
+  };
 
   const handleCellClick = (row: number, col: number) => {
     const layers = board[row][col];
@@ -124,6 +136,9 @@ export default function Home() {
   };
 
   const handleReset = () => {
+    // ゲームロジックインスタンスもリセット
+    gameRef.current = new WataruToGame();
+    
     setBoard(Array.from({ length: 18 }, () => 
       Array.from({ length: 18 }, () => [0, 0])
     ));
@@ -219,6 +234,15 @@ export default function Home() {
     // 4マス・5マスの場合、それぞれのブロック在庫が0なら確定不可
     if (currentPath.length === 4 && playerBlocks[currentPlayer].size4 === 0) return alert("4マスブロックはもうありません");
     if (currentPath.length === 5 && playerBlocks[currentPlayer].size5 === 0) return alert("5マスブロックはもうありません");
+    
+    // ゲームロジックに手を記録
+    const move = {
+      player: currentPlayer,
+      path: currentPath,
+      timestamp: Date.now(),
+    };
+    gameRef.current.applyMove(move);
+    
     // ブロックを減らす
     if (currentPath.length === 4) {
       // 4マスブロックを使用
@@ -239,9 +263,14 @@ export default function Home() {
         } 
       }));
     }
+    
+    // 勝敗判定
     if (checkBridge(board, currentPlayer)) {
       alert("あなたの勝ちです！");
+      // デバッグ用：ゲーム記録を出力
+      console.log("Game Record:", gameRef.current.exportGameRecord());
     }
+    
     // currentPathをクリアしてターンを移動
     setCurrentPath([]);
     setCurrentPlayer((-currentPlayer) as 1 | -1);
