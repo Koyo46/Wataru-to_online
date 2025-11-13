@@ -3,6 +3,8 @@
 import Image from "next/image";
 import { useState, useRef, useEffect } from "react";
 import { WataruToGame } from "../utils/gameLogic";
+import { RandomAI } from "../utils/randomAI";
+import { Move } from "../types/game";
 
 export default function Home() {
   // ゲームロジック管理用のインスタンス
@@ -23,6 +25,12 @@ export default function Home() {
     [-1]: { size4: 1, size5: 1 }, // ピンクプレイヤー
   });
 
+  // AI対戦モード関連の状態
+  const [gameMode, setGameMode] = useState<'pvp' | 'vsRandom'>('pvp');
+  const [aiPlayer, setAiPlayer] = useState<1 | -1 | null>(null);
+  const [isAIThinking, setIsAIThinking] = useState(false);
+  const [isGameOver, setIsGameOver] = useState(false);
+
   // Alpha Zero用のデータ取得関数（デバッグ・将来の統合用）
   const exportGameStateForAI = () => {
     return {
@@ -32,7 +40,94 @@ export default function Home() {
     };
   };
 
+  // moveを盤面に適用する関数
+  const applyMoveToBoard = (move: Move) => {
+    const newBoard = board.map(r => r.map(c => [...c]));
+    move.path.forEach(({ row, col, layer }) => {
+      newBoard[row][col][layer] = move.player;
+    });
+    setBoard(newBoard);
+    
+    // ブロック数を減らす
+    if (move.path.length === 4) {
+      setPlayerBlocks(prev => ({
+        ...prev,
+        [move.player]: {
+          ...prev[move.player],
+          size4: prev[move.player].size4 - 1
+        }
+      }));
+    } else if (move.path.length === 5) {
+      setPlayerBlocks(prev => ({
+        ...prev,
+        [move.player]: {
+          ...prev[move.player],
+          size5: prev[move.player].size5 - 1
+        }
+      }));
+    }
+    
+    // 勝敗判定
+    if (checkBridge(newBoard, move.player)) {
+      setIsGameOver(true);
+      setTimeout(() => {
+        alert(`${move.player === 1 ? '水色' : 'ピンク'}の勝ちです！`);
+        console.log("Game Record:", gameRef.current.exportGameRecord());
+      }, 100);
+      return; // ゲーム終了時はターン交代しない
+    }
+    
+    // ターン交代
+    setCurrentPlayer((-move.player) as 1 | -1);
+  };
+
+  // AIのターンを実行
+  const executeAIMove = async () => {
+    if (currentPlayer !== aiPlayer || isAIThinking || currentPath.length > 0 || isGameOver) return;
+    
+    setIsAIThinking(true);
+    
+    // 少し待つ（人間らしく見せる）
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    try {
+      const game = new WataruToGame({
+        board: JSON.parse(JSON.stringify(board)),
+        currentPlayer,
+        playerBlocks: JSON.parse(JSON.stringify(playerBlocks)),
+        moveHistory: [],
+      });
+
+      const ai = new RandomAI(currentPlayer);
+      const move = ai.selectMove(game);
+
+      if (move) {
+        // ゲームロジックに記録
+        gameRef.current.applyMove(move);
+        // UIに反映
+        applyMoveToBoard(move);
+      } else {
+        alert("AIが手を見つけられませんでした");
+      }
+    } catch (error) {
+      console.error("AI Error:", error);
+    } finally {
+      setIsAIThinking(false);
+    }
+  };
+
+  // AIのターンになったら自動実行
+  useEffect(() => {
+    if (currentPlayer === aiPlayer && gameMode === 'vsRandom' && !isAIThinking && !isGameOver) {
+      executeAIMove();
+    }
+  }, [currentPlayer, aiPlayer, gameMode, isAIThinking, isGameOver]);
+
   const handleCellClick = (row: number, col: number) => {
+    // AI対戦中は人間のターンでのみクリック可能
+    if (gameMode === 'vsRandom' && currentPlayer === aiPlayer) return;
+    if (isAIThinking) return;
+    if (isGameOver) return;
     const layers = board[row][col];
     const layer1 = layers[0];
     const layer2 = layers[1];
@@ -145,6 +240,8 @@ export default function Home() {
     setCurrentPlayer(1);
     setCurrentPath([]);
     setPlayerBlocks({ 1: { size4: 1, size5: 1 }, [-1]: { size4: 1, size5: 1 } });
+    setIsAIThinking(false);
+    setIsGameOver(false);
   };
 
   function checkBridge(board: number[][][], player: 1 | -1) {
@@ -215,6 +312,7 @@ export default function Home() {
 
   const handleConfirm = () => {
     if (currentPath.length < 3) return; // 3マス未満は確定できない
+    if (isGameOver) return; // ゲーム終了後は確定不可
     
     // レイヤー2モード（橋渡し）の場合、始点と終点が両方とも既存マスでなければならない
     const firstCell = currentPath[0];
@@ -326,12 +424,51 @@ export default function Home() {
       {/* メイン画面（中央） */}
       <div className="flex-1 flex flex-col items-center border-r-2 border-gray-300 py-8">
         {/* タイトル */}
-        <div className="mb-8">
+        <div className="mb-4">
           <h1 className="text-4xl font-bold">
             <span className="text-cyan-400">ワタルート</span>
             <span className="text-pink-400">道場</span>
           </h1>
         </div>
+        
+        {/* ゲームモード選択 */}
+        <div className="mb-4 flex gap-2">
+          <button
+            onClick={() => {
+              setGameMode('pvp');
+              setAiPlayer(null);
+              handleReset();
+            }}
+            className={`px-4 py-2 rounded font-bold transition ${
+              gameMode === 'pvp' 
+                ? 'bg-blue-600 text-white' 
+                : 'bg-gray-300 text-gray-700 hover:bg-gray-400'
+            }`}
+          >
+            対人戦
+          </button>
+          <button
+            onClick={() => {
+              setGameMode('vsRandom');
+              setAiPlayer(-1); // ピンクをAIに
+              handleReset();
+            }}
+            className={`px-4 py-2 rounded font-bold transition ${
+              gameMode === 'vsRandom' 
+                ? 'bg-blue-600 text-white' 
+                : 'bg-gray-300 text-gray-700 hover:bg-gray-400'
+            }`}
+          >
+            vsランダムAI
+          </button>
+        </div>
+
+        {/* AI思考中の表示 */}
+        {isAIThinking && (
+          <div className="mb-2 text-lg font-bold text-purple-600 animate-pulse">
+            🤔 AIが考え中...
+          </div>
+        )}
         
         {/* タイル配置中なら表示 */}
         <div className="flex justify-center items-center mt-4 mb-6 min-h-[56px]">

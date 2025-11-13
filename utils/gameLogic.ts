@@ -49,11 +49,113 @@ export class WataruToGame {
     return tensor;
   }
 
-  // すべての合法手を取得（後で実装）
+  // すべての合法手を取得
   getLegalMoves(): Move[] {
     const moves: Move[] = [];
-    // TODO: 合法手の生成ロジックを実装
-    // 現在のhandleCellClickロジックを参考に、全パターンを列挙
+    const player = this.state.currentPlayer;
+    const n = 18; // 盤面サイズ
+
+    // 各マスを起点として探索
+    for (let row = 0; row < n; row++) {
+      for (let col = 0; col < n; col++) {
+        const [layer1, layer2] = this.state.board[row][col];
+        
+        // レイヤー2が埋まっている場合はスキップ
+        if (layer2 !== 0) continue;
+
+        // 起点として配置可能かチェック
+        let startLayer = -1;
+        if (layer1 === 0) {
+          startLayer = 0; // レイヤー1に配置
+        } else if (layer1 === player) {
+          startLayer = 1; // レイヤー2に配置（橋モード）
+        } else {
+          continue; // 相手の色がある場合は配置不可
+        }
+
+        // この起点から4方向に探索
+        const directions = [
+          { dr: 0, dc: 1 },  // 右
+          { dr: 0, dc: -1 }, // 左
+          { dr: 1, dc: 0 },  // 下
+          { dr: -1, dc: 0 }, // 上
+        ];
+
+        for (const { dr, dc } of directions) {
+          // 各方向に3マス、4マス、5マスの手を生成
+          const path: { row: number; col: number; layer: number }[] = [
+            { row, col, layer: startLayer }
+          ];
+
+          let currentRow = row;
+          let currentCol = col;
+
+          // 最大5マスまで探索
+          for (let len = 1; len < 5; len++) {
+            currentRow += dr;
+            currentCol += dc;
+
+            // 盤面外チェック
+            if (currentRow < 0 || currentRow >= n || currentCol < 0 || currentCol >= n) {
+              break;
+            }
+
+            const [nextLayer1, nextLayer2] = this.state.board[currentRow][currentCol];
+            
+            // レイヤー2が埋まっている場合は配置不可
+            if (nextLayer2 !== 0) break;
+
+            let targetLayer = -1;
+            if (startLayer === 0) {
+              // レイヤー1モード: レイヤー1が空でなければならない
+              if (nextLayer1 === 0) {
+                targetLayer = 0;
+              } else {
+                break; // 配置不可
+              }
+            } else {
+              // レイヤー2モード（橋渡し）
+              if (nextLayer1 === player || nextLayer1 === 0) {
+                targetLayer = 1;
+              } else {
+                break; // 相手の色がある場合は配置不可
+              }
+            }
+
+            path.push({ row: currentRow, col: currentCol, layer: targetLayer });
+
+            // 3マス以上で合法手として追加
+            if (path.length >= 3) {
+              // 橋モードの場合、終点がレイヤー1に自分の色があるかチェック
+              if (startLayer === 1) {
+                const endCell = path[path.length - 1];
+                const [endLayer1] = this.state.board[endCell.row][endCell.col];
+                if (endLayer1 !== player) {
+                  // 終点が既存マスでない場合はスキップ
+                  continue;
+                }
+              }
+
+              // ブロック数チェック
+              const blockSize = path.length;
+              if (blockSize === 4 && this.state.playerBlocks[player].size4 <= 0) {
+                continue; // 4マスブロックがない
+              }
+              if (blockSize === 5 && this.state.playerBlocks[player].size5 <= 0) {
+                continue; // 5マスブロックがない
+              }
+
+              moves.push({
+                player,
+                path: [...path],
+                timestamp: Date.now(),
+              });
+            }
+          }
+        }
+      }
+    }
+
     return moves;
   }
 
